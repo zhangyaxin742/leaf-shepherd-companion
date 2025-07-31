@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
 type SheepState = 'idle' | 'walking' | 'eating' | 'happy' | 'sleeping' | 'excited';
 
@@ -11,9 +11,13 @@ interface LeafSheepProps {
 export const LeafSheep: React.FC<LeafSheepProps> = ({ state, onClick, onPet }) => {
   const [position, setPosition] = useState({ x: 50, y: 60 });
   const [facingRight, setFacingRight] = useState(true);
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const sheepRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (state === 'walking') {
+    if (state === 'walking' && !isDragging) {
       const interval = setInterval(() => {
         setPosition(prev => {
           const newX = prev.x + (facingRight ? 2 : -2);
@@ -33,7 +37,88 @@ export const LeafSheep: React.FC<LeafSheepProps> = ({ state, onClick, onPet }) =
 
       return () => clearInterval(interval);
     }
-  }, [state, facingRight]);
+  }, [state, facingRight, isDragging]);
+
+  // Mouse/touch event handlers for dragging
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (!sheepRef.current) return;
+    
+    setIsDragging(true);
+    const rect = sheepRef.current.parentElement?.getBoundingClientRect();
+    if (!rect) return;
+    
+    const offsetX = (e.clientX - rect.left) / rect.width * 100;
+    const offsetY = (e.clientY - rect.top) / rect.height * 100;
+    
+    setDragStart({ x: offsetX, y: offsetY });
+    setDragOffset({ x: offsetX - position.x, y: offsetY - position.y });
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isDragging || !sheepRef.current) return;
+    
+    const rect = sheepRef.current.parentElement?.getBoundingClientRect();
+    if (!rect) return;
+    
+    const newX = (e.clientX - rect.left) / rect.width * 100 - dragOffset.x;
+    const newY = (e.clientY - rect.top) / rect.height * 100 - dragOffset.y;
+    
+    // Keep sheep within bounds (with some padding)
+    const boundedX = Math.max(10, Math.min(90, newX));
+    const boundedY = Math.max(10, Math.min(90, newY));
+    
+    setPosition({ x: boundedX, y: boundedY });
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
+
+  // Global mouse events for dragging
+  useEffect(() => {
+    const handleGlobalMouseMove = (e: MouseEvent) => {
+      if (!isDragging || !sheepRef.current) return;
+      
+      const rect = sheepRef.current.parentElement?.getBoundingClientRect();
+      if (!rect) return;
+      
+      const newX = (e.clientX - rect.left) / rect.width * 100 - dragOffset.x;
+      const newY = (e.clientY - rect.top) / rect.height * 100 - dragOffset.y;
+      
+      const boundedX = Math.max(10, Math.min(90, newX));
+      const boundedY = Math.max(10, Math.min(90, newY));
+      
+      setPosition({ x: boundedX, y: boundedY });
+    };
+
+    const handleGlobalMouseUp = () => {
+      setIsDragging(false);
+    };
+
+    if (isDragging) {
+      document.addEventListener('mousemove', handleGlobalMouseMove);
+      document.addEventListener('mouseup', handleGlobalMouseUp);
+    }
+
+    return () => {
+      document.removeEventListener('mousemove', handleGlobalMouseMove);
+      document.removeEventListener('mouseup', handleGlobalMouseUp);
+    };
+  }, [isDragging, dragOffset]);
+
+  const handleClick = (e: React.MouseEvent) => {
+    // Only trigger click if not dragging
+    if (!isDragging && Math.abs(e.clientX - dragStart.x) < 5 && Math.abs(e.clientY - dragStart.y) < 5) {
+      onClick();
+    }
+  };
+
+  const handleDoubleClick = (e: React.MouseEvent) => {
+    // Only trigger double-click if not dragging
+    if (!isDragging) {
+      onPet();
+    }
+  };
 
   const getAnimationClass = () => {
     switch (state) {
@@ -67,14 +152,17 @@ export const LeafSheep: React.FC<LeafSheepProps> = ({ state, onClick, onPet }) =
 
   return (
     <div
-      className={`absolute transition-all duration-300 cursor-pointer select-none ${getAnimationClass()}`}
+      ref={sheepRef}
+      className={`absolute ${isDragging ? 'cursor-grabbing' : 'cursor-grab'} select-none ${!isDragging ? getAnimationClass() : ''} ${isDragging ? 'z-50' : ''}`}
       style={{ 
         left: `${position.x}%`, 
         top: `${position.y}%`,
-        transform: `translateX(-50%) translateY(-50%) ${!facingRight ? 'scaleX(-1)' : ''}`
+        transform: `translateX(-50%) translateY(-50%) ${!facingRight ? 'scaleX(-1)' : ''}`,
+        transition: isDragging ? 'none' : 'all 0.3s ease'
       }}
-      onClick={onClick}
-      onDoubleClick={onPet}
+      onMouseDown={handleMouseDown}
+      onClick={handleClick}
+      onDoubleClick={handleDoubleClick}
     >
       {/* Leaf sheep body */}
       <div className="relative">
